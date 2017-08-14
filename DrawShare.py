@@ -7,6 +7,10 @@ import pickle
 import ConnectDialog as connectDialog
 import SimpleDropbox as DropboxWrapper
 
+import Client as Client
+import threading
+
+flag = False
 
 class Sketch(tk.Tk):
     def __init__(self):
@@ -32,6 +36,9 @@ class Sketch(tk.Tk):
 
         self.old_x = None
         self.old_y = None
+
+        self.client = Client.Client()
+        threading.Thread(target=self.client.run).start()  # start thread for the communication
 
         # self.overrideredirect(True)   # remove the window border
 
@@ -60,8 +67,8 @@ class Sketch(tk.Tk):
 
         menu = tk.Menu(self.menubar, tearoff=0)
         self.menubar.add_cascade(label="Network", menu=menu)
-        menu.add_command(label="Join", command=self.setup_connection)
-        menu.add_command(label="Exit", command=self.setup_connection)
+        menu.add_command(label="Join")  # TODO
+        menu.add_command(label="Exit")  # TODO
         menu.add_command(label="Push", command=lambda: self.push(str('/' + self.username + '.pkl')))
         menu.add_command(label="Pull partner", command=lambda: self.pull(str('/' + self.partner + '.pkl')))
         menu.add_command(label="Pull mine", command=lambda: self.pull(str('/' + self.username + '.pkl')))
@@ -202,6 +209,9 @@ class Sketch(tk.Tk):
         self.bind("c", lambda _: self.choose_color())
         self.bind("b", lambda _: self.use_brush())
         self.bind("e", lambda _: self.use_eraser())
+
+    def processIncoming(self):
+        print("INCOMING")
 
 
 class Line:
