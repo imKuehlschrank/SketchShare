@@ -25,14 +25,14 @@ class Server:
             data = conn.recv(4096)
 
             reply = '%s %s' % (addr, data.decode())
-            print(reply, end='')  # log everything on server
+            print(reply)
 
             if not data:
                 break
 
             for client in CONNECTIONS:
                 if client != conn:
-                    client.sendall(reply.encode())
+                        client.sendall(reply.encode())
 
     def run(self):
         while True:
@@ -40,7 +40,9 @@ class Server:
             msg = '%s joined the room' % str(addr)
             print(msg)
             CONNECTIONS.append(conn)
-            threading.Thread(target=server.client_thread, args=(conn, addr)).start()
+            t = threading.Thread(target=server.client_thread, args=(conn, addr))
+            t.daemon = True
+            t.start()
         server.s.close()
 
 

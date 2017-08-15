@@ -10,7 +10,8 @@ import SimpleDropbox as DropboxWrapper
 import Client as Client
 import threading
 
-flag = False
+from queue import *
+
 
 class Sketch(tk.Tk):
     def __init__(self):
@@ -27,8 +28,8 @@ class Sketch(tk.Tk):
         self.redo_list = []
 
         self.line_width = 5
-        self.color = 'black'
-        self.background_color = 'white'
+        self.color = '#000000'
+        self.background_color = '#ffffff'
         self.bg_img = None
         self.brush_color = self.color
         self.eraser_color = self.background_color
@@ -38,9 +39,12 @@ class Sketch(tk.Tk):
         self.old_y = None
 
         self.client = Client.Client()
-        threading.Thread(target=self.client.run).start()  # start thread for the communication
+        self.queue = Queue(maxsize=0)
+        self.draw_queue = Queue(maxsize=0)
 
-        # self.overrideredirect(True)   # remove the window border
+        t1 = threading.Thread(target=self.client.run)
+        t1.daemon = True
+        t1.start()
 
         # row 0
         self.menubar = tk.Menu(self, relief='flat')
@@ -67,7 +71,7 @@ class Sketch(tk.Tk):
 
         menu = tk.Menu(self.menubar, tearoff=0)
         self.menubar.add_cascade(label="Network", menu=menu)
-        menu.add_command(label="Join")  # TODO
+        menu.add_command(label="Join", command=lambda: self.join())  # TODO
         menu.add_command(label="Exit")  # TODO
         menu.add_command(label="Push", command=lambda: self.push(str('/' + self.username + '.pkl')))
         menu.add_command(label="Pull partner", command=lambda: self.pull(str('/' + self.partner + '.pkl')))
@@ -84,14 +88,19 @@ class Sketch(tk.Tk):
 
         self.setup_event_listeners()
 
+    def read_input(self, elem):
+        self.queue.put(elem)
+        self.client.write_from_queue(self.queue)
+
     # ---------------------- Draw on canvas ----------------------
     def press(self, event):
         self.old_x = event.x
         self.old_y = event.y
 
     def drag(self, event):
-        obj = Line(self.old_x, self.old_y, event.x, event.y)
-        obj.draw_on_canvas(self.canvas, self.line_width, self.color)
+        obj = Line(self.old_x, self.old_y, event.x, event.y, self.line_width, self.color)
+        obj.draw_on_canvas(self.canvas)
+        self.read_input(str(obj))
 
         self.history.extend([self.old_x, self.old_y, event.x, event.y, self.line_width, self.color])
         self.old_x = event.x
@@ -104,7 +113,7 @@ class Sketch(tk.Tk):
     def draw_on_canvas(self, data, is_show_strokes=False):
         for x1, y1, x2, y2, width, color in zip(*[iter(data)]*6):
             self.history.extend([x1, y1, x2, y2, width, color])
-            Line(x1, y1, x2, y2).draw_on_canvas(self.canvas, width, color)
+            Line(x1, y1, x2, y2, width, color).draw_on_canvas(self.canvas)
             if is_show_strokes:
                 self.canvas.update()
 
@@ -173,6 +182,9 @@ class Sketch(tk.Tk):
         self.color = self.brush_color
         self.canvas.config(cursor='pencil')
 
+    def join(self):
+        threading.Thread(target=self.client.run).start()  # start thread for the communication
+
     # ---------------------- Dropbox stuff ----------------------
     def pull(self, filename):
         self.remote_storage.download_file_to_machine(self.cwd + filename, filename)
@@ -210,19 +222,21 @@ class Sketch(tk.Tk):
         self.bind("b", lambda _: self.use_brush())
         self.bind("e", lambda _: self.use_eraser())
 
-    def processIncoming(self):
-        print("INCOMING")
-
 
 class Line:
-    def __init__(self, x1, y1, x2, y2):
+    def __init__(self, x1, y1, x2, y2, line_width=5, stroke_color='#000000'):
         self.x1 = x1
         self.y1 = y1
         self.x2 = x2
         self.y2 = y2
+        self.width = line_width
+        self.color = stroke_color
 
-    def draw_on_canvas(self, canvas, line_width, color):
-        canvas.create_line(self.x1, self.y1, self.x2, self.y2, width=line_width, fill=color,
+    def __str__(self):
+        return '%s %s %s %s %s %s' % (self.x1, self.y1, self.x2, self.y2, self.width, self.color)
+
+    def draw_on_canvas(self, canvas):
+        canvas.create_line(self.x1, self.y1, self.x2, self.y2, width=self.width, fill=self.color,
                            capstyle=tk.ROUND, joinstyle=tk.ROUND, smooth=True, splinesteps=200)
 
 
