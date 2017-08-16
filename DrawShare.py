@@ -6,10 +6,10 @@ from tkinter.filedialog import asksaveasfilename
 import pickle
 import ConnectDialog as connectDialog
 
-import Client as Client
+import Client
 import threading
 
-from queue import *
+import queue
 
 
 class Sketch(tk.Tk):
@@ -17,9 +17,6 @@ class Sketch(tk.Tk):
         tk.Tk.__init__(self)
 
         # Data
-        self.username = "fil"
-        self.partner = "ana"
-
         self.history = []
         self.undo_list = []
         self.redo_list = []
@@ -35,21 +32,9 @@ class Sketch(tk.Tk):
         self.old_x = None
         self.old_y = None
 
-        self.client = Client.Client()
-        self.queue = Queue(maxsize=0)
-        self.draw_queue = Queue(maxsize=0)
-
-        t1 = threading.Thread(target=self.client.run)
-        t1.daemon = True
-        t1.start()
-
-        t2 = threading.Thread(target=self.client.put_in_draw_queue, args=(self.draw_queue,))
-        t2.daemon = True
-        t2.start()
-
-        t3 = threading.Thread(target=self.draw_from_draw_q_in_gui)
-        t3.daemon = True
-        t3.start()
+        self.send_queue = queue.Queue()
+        self.receive_queue = queue.Queue()
+        self.client = Client.Client(send_q=self.send_queue, receive_q=self.receive_queue)
 
         # ---------------------- LAYOUT STUFF BEGIN ----------------------
         # row 0
@@ -77,7 +62,7 @@ class Sketch(tk.Tk):
 
         menu = tk.Menu(self.menubar, tearoff=0)
         self.menubar.add_cascade(label="Network", menu=menu)
-        menu.add_command(label="Join Room")  # TODO
+        menu.add_command(label="Join Room", command=self.join_room)
         menu.add_command(label="Exit Room")  # TODO
         self.tk.call(self, "config", "-menu", self.menubar)
 
@@ -86,21 +71,11 @@ class Sketch(tk.Tk):
         self.canvas.grid(row=1, columnspan=4)
 
         # row 2
-        self.label_me = tk.Label(self, text="Not Connected")
-        self.label_me.grid(row=2, column=3, sticky=tk.E)
+        self.status_label = tk.Label(self, text="Not Connected")
+        self.status_label.grid(row=2, column=3, sticky=tk.E)
         # ---------------------- LAYOUT STUFF END ----------------------
 
         self.setup_event_listeners()
-
-    def draw_from_draw_q_in_gui(self):
-        while True:
-            t = self.draw_queue.get().split()
-            obj = Line(int(t[0]), int(t[1]), int(t[2]), int(t[3]), int(t[4]), t[5])
-            obj.draw_on_canvas(self.canvas)
-
-    def send_to_server(self, elem):
-        self.queue.put(elem)
-        self.client.write_from_queue(self.queue)
 
     # ---------------------- Draw on canvas ----------------------
     def press(self, event):
@@ -108,13 +83,13 @@ class Sketch(tk.Tk):
         self.old_y = event.y
         obj = Line(self.old_x, self.old_y, self.old_x, self.old_y, self.line_width, self.color)
         obj.draw_on_canvas(self.canvas)
-        self.send_to_server(str(obj))
+        self.send_queue.put(str(obj))
         self.history.extend([self.old_x, self.old_y, event.x, event.y, self.line_width, self.color])
 
     def drag(self, event):
         obj = Line(self.old_x, self.old_y, event.x, event.y, self.line_width, self.color)
         obj.draw_on_canvas(self.canvas)
-        self.send_to_server(str(obj))
+        self.send_queue.put(str(obj))
         self.history.extend([self.old_x, self.old_y, event.x, event.y, self.line_width, self.color])
         self.old_x = event.x
         self.old_y = event.y
@@ -128,7 +103,6 @@ class Sketch(tk.Tk):
             self.history.extend([x1, y1, x2, y2, width, color])
             obj = Line(x1, y1, x2, y2, width, color)
             obj.draw_on_canvas(self.canvas)
-            self.send_to_server(str(obj))
             if is_show_strokes:
                 self.canvas.update()
 
@@ -201,6 +175,7 @@ class Sketch(tk.Tk):
         self.bg_img = tk.PhotoImage(file=path_to_img)
         self.canvas.create_image(250, 250, image=self.bg_img)
 
+    # TODO unused
     def setup_connection(self):
         connectDialog.ConnectDialog()
 
@@ -220,6 +195,16 @@ class Sketch(tk.Tk):
         self.bind("b", lambda _: self.use_brush())
         self.bind("e", lambda _: self.use_eraser())
 
+    # ---------------------- Network ----------------------
+    def join_room(self):
+        self.client.run()
+        threading.Thread(target=self.draw_from_draw_q_in_gui, daemon=True).start()
+
+    def draw_from_draw_q_in_gui(self):
+        while True:
+            t = self.receive_queue.get().split()
+            obj = Line(int(t[0]), int(t[1]), int(t[2]), int(t[3]), int(t[4]), t[5])
+            obj.draw_on_canvas(self.canvas)
 
 class Line:
     def __init__(self, x1, y1, x2, y2, line_width=5, stroke_color='#000000'):
