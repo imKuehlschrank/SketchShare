@@ -5,7 +5,6 @@ from tkinter.filedialog import askopenfilename
 from tkinter.filedialog import asksaveasfilename
 import pickle
 import ConnectDialog as connectDialog
-import SimpleDropbox as DropboxWrapper
 
 import Client as Client
 import threading
@@ -16,8 +15,6 @@ from queue import *
 class Sketch(tk.Tk):
     def __init__(self):
         tk.Tk.__init__(self)
-        # self.resizable(False, False)  # set the connect window to be non - resizable
-        self.remote_storage = DropboxWrapper.SimpleDropbox('qvT2K9jz3CsAAAAAAAAGM128w_rmQFr6MUstpTnpVE99I6vzqzLpzEUFVqeXFdzn')
 
         # Data
         self.username = "fil"
@@ -46,6 +43,15 @@ class Sketch(tk.Tk):
         t1.daemon = True
         t1.start()
 
+        t2 = threading.Thread(target=self.client.put_in_draw_queue, args=(self.draw_queue,))
+        t2.daemon = True
+        t2.start()
+
+        t3 = threading.Thread(target=self.draw_from_draw_q_in_gui)
+        t3.daemon = True
+        t3.start()
+
+        # ---------------------- LAYOUT STUFF BEGIN ----------------------
         # row 0
         self.menubar = tk.Menu(self, relief='flat')
 
@@ -71,11 +77,8 @@ class Sketch(tk.Tk):
 
         menu = tk.Menu(self.menubar, tearoff=0)
         self.menubar.add_cascade(label="Network", menu=menu)
-        menu.add_command(label="Join", command=lambda: self.join())  # TODO
-        menu.add_command(label="Exit")  # TODO
-        menu.add_command(label="Push", command=lambda: self.push(str('/' + self.username + '.pkl')))
-        menu.add_command(label="Pull partner", command=lambda: self.pull(str('/' + self.partner + '.pkl')))
-        menu.add_command(label="Pull mine", command=lambda: self.pull(str('/' + self.username + '.pkl')))
+        menu.add_command(label="Join Room")  # TODO
+        menu.add_command(label="Exit Room")  # TODO
         self.tk.call(self, "config", "-menu", self.menubar)
 
         # row 1
@@ -85,10 +88,17 @@ class Sketch(tk.Tk):
         # row 2
         self.label_me = tk.Label(self, text="Not Connected")
         self.label_me.grid(row=2, column=3, sticky=tk.E)
+        # ---------------------- LAYOUT STUFF END ----------------------
 
         self.setup_event_listeners()
 
-    def read_input(self, elem):
+    def draw_from_draw_q_in_gui(self):
+        while True:
+            t = self.draw_queue.get().split()
+            obj = Line(int(t[0]), int(t[1]), int(t[2]), int(t[3]), int(t[4]), t[5])
+            obj.draw_on_canvas(self.canvas)
+
+    def send_to_server(self, elem):
         self.queue.put(elem)
         self.client.write_from_queue(self.queue)
 
@@ -96,12 +106,15 @@ class Sketch(tk.Tk):
     def press(self, event):
         self.old_x = event.x
         self.old_y = event.y
+        obj = Line(self.old_x, self.old_y, self.old_x, self.old_y, self.line_width, self.color)
+        obj.draw_on_canvas(self.canvas)
+        self.send_to_server(str(obj))
+        self.history.extend([self.old_x, self.old_y, event.x, event.y, self.line_width, self.color])
 
     def drag(self, event):
         obj = Line(self.old_x, self.old_y, event.x, event.y, self.line_width, self.color)
         obj.draw_on_canvas(self.canvas)
-        self.read_input(str(obj))
-
+        self.send_to_server(str(obj))
         self.history.extend([self.old_x, self.old_y, event.x, event.y, self.line_width, self.color])
         self.old_x = event.x
         self.old_y = event.y
@@ -110,10 +123,12 @@ class Sketch(tk.Tk):
         self.old_x = None
         self.old_y = None
 
-    def draw_on_canvas(self, data, is_show_strokes=False):
+    def load_to_canvas(self, data, is_show_strokes=False):
         for x1, y1, x2, y2, width, color in zip(*[iter(data)]*6):
             self.history.extend([x1, y1, x2, y2, width, color])
-            Line(x1, y1, x2, y2, width, color).draw_on_canvas(self.canvas)
+            obj = Line(x1, y1, x2, y2, width, color)
+            obj.draw_on_canvas(self.canvas)
+            self.send_to_server(str(obj))
             if is_show_strokes:
                 self.canvas.update()
 
@@ -132,7 +147,7 @@ class Sketch(tk.Tk):
         dat = pickle.load(open(filename, 'rb'))
         self.clear_canvas()
         self.history.clear()
-        self.draw_on_canvas(dat, is_show_strokes=False)
+        self.load_to_canvas(dat, is_show_strokes=False)
 
     # ---------------------- Edit ----------------------
     def undo(self):
@@ -181,23 +196,6 @@ class Sketch(tk.Tk):
     def use_brush(self):
         self.color = self.brush_color
         self.canvas.config(cursor='pencil')
-
-    def join(self):
-        threading.Thread(target=self.client.run).start()  # start thread for the communication
-
-    # ---------------------- Dropbox stuff ----------------------
-    def pull(self, filename):
-        self.remote_storage.download_file_to_machine(self.cwd + filename, filename)
-        dat = pickle.load(open(self.cwd + filename, 'rb'))
-        self.clear_canvas()
-        self.history.clear()
-        self.draw_on_canvas(dat, is_show_strokes=True)
-
-    def push(self, filename):
-        with open(self.cwd + filename, 'wb') as f:
-            pickle.dump(self.history, f)
-        self.remote_storage.upload_file(self.cwd + filename, filename)
-        os.remove(self.cwd + filename)
 
     def set_bg_image(self, path_to_img):
         self.bg_img = tk.PhotoImage(file=path_to_img)

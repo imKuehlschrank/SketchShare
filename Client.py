@@ -1,7 +1,5 @@
 import socket
-
-# inspiration from
-# http://www.bogotobogo.com/python/python_network_programming_tcp_server_client_chat_server_chat_client_select.php
+import queue
 
 HOST = 'localhost'
 PORT = 8888
@@ -12,6 +10,8 @@ class Client:
         self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.s.connect((HOST, PORT))
         self.data = None
+        self.draw_queue = queue.Queue(maxsize=0)
+
 
     def run(self):
         while True:
@@ -19,11 +19,15 @@ class Client:
             if not data:
                 break
             else:
-                print(data.decode())
+                self.draw_queue.put(data.decode())
 
     def write_from_queue(self, q):
         a = q.get()
         self.s.send(a.encode())
+
+    def put_in_draw_queue(self,q):
+        while True:
+           q.put(self.draw_queue.get())
 
 
 if __name__ == "__main__":

@@ -1,8 +1,6 @@
 import socket
 import threading
-
-# inspiration from
-# http://www.binarytides.com/python-socket-server-code-example/
+import select
 
 HOST = 'localhost'
 PORT = 8888
@@ -18,13 +16,15 @@ class Server:
 
     def client_thread(self, conn, addr):
         for client in CONNECTIONS:
-            msg = '%s joined the room\n' % str(addr)
-            client.sendall(msg.encode())
+            # msg = '%s joined the room\n' % str(addr)
+            # client.sendall(msg.encode())
+            pass
 
         while True:
             data = conn.recv(4096)
+            # reply = '%s %s' % (addr, data.decode())
+            reply = '%s' % (data.decode())
 
-            reply = '%s %s' % (addr, data.decode())
             print(reply)
 
             if not data:
