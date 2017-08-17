@@ -1,18 +1,18 @@
 import os
 import tkinter as tk
+
 from tkinter.colorchooser import askcolor
 from tkinter.filedialog import askopenfilename
 from tkinter.filedialog import asksaveasfilename
-import pickle
-import ConnectDialog as connectDialog
 
-import Client
 import threading
-
 import queue
+import pickle
+
+import networkclient
 
 
-class Sketch(tk.Tk):
+class SketchShare(tk.Tk):
     def __init__(self):
         tk.Tk.__init__(self)
 
@@ -31,10 +31,9 @@ class Sketch(tk.Tk):
 
         self.old_x = None
         self.old_y = None
-
-        self.send_queue = queue.Queue()
-        self.receive_queue = queue.Queue()
-        self.client = Client.Client(send_q=self.send_queue, receive_q=self.receive_queue)
+        self.send_queue = None
+        self.receive_queue = None
+        self.networkclient = None
 
         # ---------------------- LAYOUT STUFF BEGIN ----------------------
         # row 0
@@ -62,8 +61,8 @@ class Sketch(tk.Tk):
 
         menu = tk.Menu(self.menubar, tearoff=0)
         self.menubar.add_cascade(label="Network", menu=menu)
-        menu.add_command(label="Join Room", command=self.join_room)
-        menu.add_command(label="Exit Room")  # TODO
+        menu.add_command(label="Join", command=self.join_network)
+        menu.add_command(label="Exit", command=self.exit_network)
         self.tk.call(self, "config", "-menu", self.menubar)
 
         # row 1
@@ -83,16 +82,18 @@ class Sketch(tk.Tk):
         self.old_y = event.y
         obj = Line(self.old_x, self.old_y, self.old_x, self.old_y, self.line_width, self.color)
         obj.draw_on_canvas(self.canvas)
-        self.send_queue.put(str(obj))
         self.history.extend([self.old_x, self.old_y, event.x, event.y, self.line_width, self.color])
+        if self.networkclient is not None:
+            self.send_queue.put(str(obj))
 
     def drag(self, event):
         obj = Line(self.old_x, self.old_y, event.x, event.y, self.line_width, self.color)
         obj.draw_on_canvas(self.canvas)
-        self.send_queue.put(str(obj))
         self.history.extend([self.old_x, self.old_y, event.x, event.y, self.line_width, self.color])
         self.old_x = event.x
         self.old_y = event.y
+        if self.networkclient is not None:
+            self.send_queue.put(str(obj))
 
     def release(self, event):
         self.old_x = None
@@ -175,10 +176,6 @@ class Sketch(tk.Tk):
         self.bg_img = tk.PhotoImage(file=path_to_img)
         self.canvas.create_image(250, 250, image=self.bg_img)
 
-    # TODO unused
-    def setup_connection(self):
-        connectDialog.ConnectDialog()
-
     def setup_event_listeners(self):
         # Draw on Canvas
         self.canvas.bind('<B1-Motion>', self.drag)
@@ -196,15 +193,27 @@ class Sketch(tk.Tk):
         self.bind("e", lambda _: self.use_eraser())
 
     # ---------------------- Network ----------------------
-    def join_room(self):
-        self.client.run()
+    def join_network(self):
+        self.clear_canvas()
+        self.history.clear()
+
+        self.send_queue = queue.Queue()
+        self.receive_queue = queue.Queue()
+        self.networkclient = networkclient.Client(send_q=self.send_queue, receive_q=self.receive_queue)
+        self.networkclient.start()
         threading.Thread(target=self.draw_from_draw_q_in_gui, daemon=True).start()
+
+    def exit_network(self):
+        self.networkclient.stop()
+        self.networkclient = None
 
     def draw_from_draw_q_in_gui(self):
         while True:
             t = self.receive_queue.get().split()
+            print('got ', t)
             obj = Line(int(t[0]), int(t[1]), int(t[2]), int(t[3]), int(t[4]), t[5])
             obj.draw_on_canvas(self.canvas)
+
 
 class Line:
     def __init__(self, x1, y1, x2, y2, line_width=5, stroke_color='#000000'):
@@ -224,6 +233,6 @@ class Line:
 
 
 if __name__ == "__main__":
-    app = Sketch()
-    app.wm_title("Sketching")
+    app = SketchShare()
+    app.wm_title("Sketch Share")
     app.mainloop()

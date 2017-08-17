@@ -1,5 +1,4 @@
 import socket
-import queue
 import threading
 
 HOST = 'localhost'
@@ -13,10 +12,13 @@ class Client:
         self.send_queue = send_q
         self.receive_queue = receive_q
 
-    def run(self):
+    def start(self):
         self.s.connect((HOST, PORT))
         threading.Thread(target=self.send, daemon=True).start()
         threading.Thread(target=self.receive, daemon=True).start()
+
+    def stop(self):
+        self.s.shutdown(socket.SHUT_RDWR)
 
     def send(self):
         while True:
@@ -26,6 +28,7 @@ class Client:
         while True:
             data = self.s.recv(4096)
             if not data:
+                print("Disconnected")
                 break
             else:
                 self.receive_queue.put(data.decode())
