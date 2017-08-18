@@ -137,7 +137,7 @@ class SketchShare(tk.Tk):
         for i in range(1, 10):  # un/redo in blocks of 10
             to_redo = self.undo_list[-6:]
             del self.undo_list[-6:]
-            self.draw_on_canvas(to_redo)
+            self.load_to_canvas(to_redo)
 
     def clear_canvas(self):
         self.canvas.delete("all")
